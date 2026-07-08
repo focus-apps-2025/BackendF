@@ -33,7 +33,7 @@ router.get('/owner/:ownerId',
 );
 
 router.get('/agent/:agentId',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'STAFF'),
     boatController.getBoatsByAgent
 );
 

@@ -98,6 +98,96 @@ const toggleUserStatus = async (req, res, next) => {
     }
 };
 
+/**
+ * Get my staff (for commission agent - returns staff assigned to them)
+ */
+const getMyStaff = async (req, res, next) => {
+    try {
+        const agentId = req.user._id;
+        const users = await userService.getUsersByAgent(agentId);
+        successResponse(res, 200, 'Staff retrieved successfully', users);
+    } catch (error) {
+        logger.error('Get my staff error:', error);
+        errorResponse(res, 500, error.message || 'Failed to get staff');
+    }
+};
+
+/**
+ * Create staff member (for commission agent - auto-assigns to them)
+ */
+const createMyStaff = async (req, res, next) => {
+    try {
+        const agentId = req.user._id;
+        const userData = {
+            ...req.body,
+            role: 'STAFF',
+            agentId: agentId.toString()
+        };
+        const user = await userService.createUser(userData);
+        successResponse(res, 201, 'Staff created successfully', user);
+    } catch (error) {
+        logger.error('Create my staff error:', error);
+        errorResponse(res, 400, error.message || 'Failed to create staff');
+    }
+};
+
+/**
+ * Update staff member (for commission agent - only their own staff)
+ */
+const updateMyStaff = async (req, res, next) => {
+    try {
+        const agentId = req.user._id.toString();
+        const staffId = req.params.id;
+
+        // Verify the staff belongs to this agent
+        const staff = await userService.getUserById(staffId);
+        if (!staff) {
+            return errorResponse(res, 404, 'Staff not found');
+        }
+        const staffAgentId = staff.agentId?._id?.toString() || staff.agentId?.toString();
+        if (staffAgentId !== agentId) {
+            return errorResponse(res, 403, 'You can only update your own staff members');
+        }
+
+        // Prevent changing role or agentId
+        const updateData = { ...req.body };
+        delete updateData.role;
+        delete updateData.agentId;
+
+        const user = await userService.updateUser(staffId, updateData);
+        successResponse(res, 200, 'Staff updated successfully', user);
+    } catch (error) {
+        logger.error('Update my staff error:', error);
+        errorResponse(res, 400, error.message || 'Failed to update staff');
+    }
+};
+
+/**
+ * Delete staff member (for commission agent - only their own staff)
+ */
+const deleteMyStaff = async (req, res, next) => {
+    try {
+        const agentId = req.user._id.toString();
+        const staffId = req.params.id;
+
+        // Verify the staff belongs to this agent
+        const staff = await userService.getUserById(staffId);
+        if (!staff) {
+            return errorResponse(res, 404, 'Staff not found');
+        }
+        const staffAgentId = staff.agentId?._id?.toString() || staff.agentId?.toString();
+        if (staffAgentId !== agentId) {
+            return errorResponse(res, 403, 'You can only delete your own staff members');
+        }
+
+        await userService.deleteUser(staffId);
+        successResponse(res, 200, 'Staff deleted successfully');
+    } catch (error) {
+        logger.error('Delete my staff error:', error);
+        errorResponse(res, 400, error.message || 'Failed to delete staff');
+    }
+};
+
 module.exports = {
     createUser,
     getUsers,
@@ -105,5 +195,9 @@ module.exports = {
     updateUser,
     deleteUser,
     getUsersByAgent,
-    toggleUserStatus
+    toggleUserStatus,
+    getMyStaff,
+    createMyStaff,
+    updateMyStaff,
+    deleteMyStaff
 };

@@ -329,7 +329,8 @@ class BoatService {
 
         // Check access
         if (user.role !== 'SUPER_ADMIN' &&
-            user._id.toString() !== agentId.toString()) {
+            user._id.toString() !== agentId.toString() &&
+            user.agentId?.toString() !== agentId.toString()) {
             throw new Error('Access denied');
         }
 

@@ -111,9 +111,95 @@ const userListQuerySchema = Joi.object({
         .default('desc')
 });
 
+// Agent staff creation schema - no role/agentId required (controller sets them)
+const createStaffSchema = Joi.object({
+    name: Joi.string()
+        .min(2)
+        .max(100)
+        .required()
+        .messages({
+            'string.min': 'Name must be at least 2 characters long',
+            'string.max': 'Name cannot exceed 100 characters',
+            'any.required': 'Name is required'
+        }),
+    email: Joi.string()
+        .email()
+        .required()
+        .messages({
+            'string.email': 'Please provide a valid email address',
+            'any.required': 'Email is required'
+        }),
+    phone: Joi.string()
+        .pattern(/^[0-9]{10}$/)
+        .messages({
+            'string.pattern.base': 'Phone number must be 10 digits'
+        }),
+    locationId: Joi.string()
+        .optional()
+        .messages({
+            'string.base': 'Location ID must be a valid string'
+        }),
+    subLocationId: Joi.string()
+        .optional()
+        .messages({
+            'string.base': 'Sub-location ID must be a valid string'
+        }),
+    isActive: Joi.boolean(),
+    password: Joi.string()
+        .required()
+        .min(8)
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])/)
+        .messages({
+            'string.min': 'Password must be at least 8 characters long',
+            'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number',
+            'any.required': 'Password is required'
+        })
+});
+
+// Agent staff update schema - no role/agentId required (controller sets them)
+const updateStaffSchema = Joi.object({
+    name: Joi.string()
+        .min(2)
+        .max(100)
+        .messages({
+            'string.min': 'Name must be at least 2 characters long',
+            'string.max': 'Name cannot exceed 100 characters'
+        }),
+    email: Joi.string()
+        .email()
+        .messages({
+            'string.email': 'Please provide a valid email address'
+        }),
+    phone: Joi.string()
+        .pattern(/^[0-9]{10}$/)
+        .messages({
+            'string.pattern.base': 'Phone number must be 10 digits'
+        }),
+    locationId: Joi.string()
+        .optional()
+        .messages({
+            'string.base': 'Location ID must be a valid string'
+        }),
+    subLocationId: Joi.string()
+        .optional()
+        .messages({
+            'string.base': 'Sub-location ID must be a valid string'
+        }),
+    isActive: Joi.boolean(),
+    password: Joi.string()
+        .min(8)
+        .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])/)
+        .messages({
+            'string.min': 'Password must be at least 8 characters long',
+            'string.pattern.base': 'Password must contain at least one uppercase letter, one lowercase letter, and one number'
+        })
+}).min(1);
+
 module.exports = {
     createUserSchema,
     updateUserSchema,
     userIdSchema,
-    userListQuerySchema
+    userListQuerySchema,
+    createStaffSchema,
+    updateStaffSchema
 };

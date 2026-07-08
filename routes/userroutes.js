@@ -9,7 +9,9 @@ const {
     createUserSchema,
     updateUserSchema,
     userIdSchema,
-    userListQuerySchema
+    userListQuerySchema,
+    createStaffSchema,
+    updateStaffSchema
 } = require('../validations/uservalidation');
 
 // All user routes require authentication
@@ -34,8 +36,32 @@ router.get('/by-agent/:agentId',
     userController.getUsersByAgent
 );
 
+router.get('/my-staff',
+    authorize('COMMISSION_AGENT'),
+    userController.getMyStaff
+);
+
+router.post('/my-staff',
+    authorize('COMMISSION_AGENT'),
+    validate(createStaffSchema),
+    userController.createMyStaff
+);
+
+router.put('/my-staff/:id',
+    authorize('COMMISSION_AGENT'),
+    validate(userIdSchema, 'params'),
+    validate(updateStaffSchema),
+    userController.updateMyStaff
+);
+
+router.delete('/my-staff/:id',
+    authorize('COMMISSION_AGENT'),
+    validate(userIdSchema, 'params'),
+    userController.deleteMyStaff
+);
+
 router.get('/:id',
-    authorize('SUPER_ADMIN'),
+    authorize('SUPER_ADMIN', 'COMMISSION_AGENT'),
     validate(userIdSchema, 'params'),
     userController.getUserById
 );
@@ -56,7 +82,7 @@ router.delete('/:id',
 );
 
 router.patch('/:id/toggle-status',
-    authorize('SUPER_ADMIN'),
+    authorize('SUPER_ADMIN', 'COMMISSION_AGENT'),
     validate(userIdSchema, 'params'),
     auditLog,
     userController.toggleUserStatus

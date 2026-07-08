@@ -64,8 +64,8 @@ const billBaseSchema = {
             'number.max': 'Commission rate cannot exceed 100%'
         }),
     status: Joi.string()
-        .valid('DRAFT', 'CONFIRMED', 'PAID', 'CANCELLED')
-        .default('DRAFT'),
+        .valid('CONFIRMED', 'CANCELLED')  // ✅ Only CONFIRMED and CANCELLED
+        .default('CONFIRMED'),
     paymentMethod: Joi.string()
         .valid('CASH', 'BANK_TRANSFER', 'UPI'),
     notes: Joi.string()

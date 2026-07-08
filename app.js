@@ -8,6 +8,8 @@ const logger = require('./config/logger');
 const { errorHandler, notFoundHandler } = require('./middleware/errormiddleware');
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { auditLog } = require('./middleware/auditLogmiddleware');
+const bookingRoutes = require('./routes/bookingroutes');
+
 
 // Import routes
 const authRoutes = require('./routes/authroutes');
@@ -20,6 +22,7 @@ const ledgerRoutes = require('./routes/ledgerroutes');
 const trackingRoutes = require('./routes/trackingroutes');
 const reportRoutes = require('./routes/reportroutes');
 const seedRoutes = require('./routes/seedroutes');
+
 
 // Helper to wrap async handlers for Express 5
 const asyncHandler = (fn) => (req, res, next) => {
@@ -61,6 +64,7 @@ app.use('/api/ledger', ledgerRoutes);
 app.use('/api/tracking', trackingRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/seed', seedRoutes);
+app.use('/api/bookings', bookingRoutes);
 
 // Audit logging for all API routes
 app.use('/api', auditLog);

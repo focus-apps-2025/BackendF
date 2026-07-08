@@ -71,8 +71,8 @@ const billSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['DRAFT', 'CONFIRMED', 'PAID', 'CANCELLED'],
-        default: 'DRAFT'
+        enum: ['CONFIRMED', 'CANCELLED'],
+        default: 'CONFIRMED'
     },
     paymentMethod: {
         type: String,

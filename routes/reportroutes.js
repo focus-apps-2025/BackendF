@@ -1,3 +1,5 @@
+// routes/reportroutes.js
+
 const express = require('express');
 const router = express.Router();
 const reportController = require('../controllers/reportcontroller');
@@ -6,7 +8,7 @@ const { authorize } = require('../middleware/rbacmiddleware');
 const { validate } = require('../middleware/validatemiddleware');
 const Joi = require('joi');
 
-// Report validation schemas
+// ✅ FIXED: Allow same day
 const dateRangeSchema = Joi.object({
     fromDate: Joi.date()
         .required()
@@ -15,9 +17,9 @@ const dateRangeSchema = Joi.object({
         }),
     toDate: Joi.date()
         .required()
-        .greater(Joi.ref('fromDate'))
+        .min(Joi.ref('fromDate'))  // ✅ Changed from 'greater' to 'min'
         .messages({
-            'date.greater': 'To date must be after from date',
+            'date.min': 'To date must be after or on from date',
             'any.required': 'To date is required'
         })
 });
@@ -37,7 +39,7 @@ const auditLogQuerySchema = Joi.object({
     resource: Joi.string(),
     fromDate: Joi.date(),
     toDate: Joi.date()
-        .greater(Joi.ref('fromDate'))
+        .min(Joi.ref('fromDate'))
 });
 
 // All report routes require authentication
@@ -88,6 +90,5 @@ router.get('/audit-logs',
     validate(auditLogQuerySchema, 'query'),
     reportController.getAuditLogs
 );
-
 
 module.exports = router;

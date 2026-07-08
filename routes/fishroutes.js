@@ -27,7 +27,7 @@ router.post('/',
 );
 
 router.get('/agent/:agentId',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'STAFF'),
     fishController.getFishByAgent
 );
 

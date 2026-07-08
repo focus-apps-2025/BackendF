@@ -17,7 +17,7 @@ class ReportService {
         const { fromDate, toDate } = this.getDateRange(filters);
 
         const matchQuery = {
-            status: { $in: ['CONFIRMED', 'PAID'] },
+            status: 'CONFIRMED',
             billDate: { $gte: fromDate, $lte: toDate },
             isDeleted: false
         };
@@ -53,22 +53,24 @@ class ReportService {
             }
         ]);
 
-        // Get daily breakdown
+        // Get daily breakdown (sparse — only days with bills)
         const dailyData = await Bill.aggregate([
             { $match: matchQuery },
             {
                 $group: {
                     _id: {
-                        year: { $year: '$billDate' },
-                        month: { $month: '$billDate' },
-                        day: { $dayOfMonth: '$billDate' }
+                        $dateToString: {
+                            format: '%Y-%m-%d',
+                            date: '$billDate',
+                            timezone: 'Asia/Kolkata'   // ✅ group by IST day, not UTC
+                        }
                     },
                     date: { $first: '$billDate' },
                     revenue: { $sum: '$grandTotal' },
                     count: { $sum: 1 }
                 }
             },
-            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } },
+            { $sort: { _id: 1 } },
             {
                 $project: {
                     _id: 0,
@@ -78,6 +80,9 @@ class ReportService {
                 }
             }
         ]);
+
+        // ✅ Zero-fill missing days so the trend always covers the full range
+        const denseDaily = this.fillMissingDates(dailyData, fromDate, toDate);
 
         return {
             summary: revenueData[0] || {
@@ -89,7 +94,7 @@ class ReportService {
                 maxBillValue: 0,
                 minBillValue: 0
             },
-            daily: dailyData,
+            daily: denseDaily,
             period: {
                 fromDate,
                 toDate
@@ -109,13 +114,13 @@ class ReportService {
         const { fromDate, toDate } = this.getDateRange(filters);
 
         const matchQuery = {
-            status: { $in: ['CONFIRMED', 'PAID'] },
+            status: 'CONFIRMED',
             billDate: { $gte: fromDate, $lte: toDate },
             isDeleted: false
         };
-
         await this.applyRoleFilter(matchQuery, user);
 
+        // ✅ Current period: includes min/max price now
         const fishRevenue = await Bill.aggregate([
             { $match: matchQuery },
             { $unwind: '$fishEntries' },
@@ -126,7 +131,9 @@ class ReportService {
                     totalRevenue: { $sum: '$fishEntries.totalAmount' },
                     totalWeight: { $sum: '$fishEntries.weightKg' },
                     count: { $sum: 1 },
-                    averagePrice: { $avg: '$fishEntries.pricePerKg' }
+                    averagePrice: { $avg: '$fishEntries.pricePerKg' },
+                    lowestPrice: { $min: '$fishEntries.pricePerKg' },   // ✅ new
+                    highestPrice: { $max: '$fishEntries.pricePerKg' },  // ✅ new
                 }
             },
             {
@@ -147,13 +154,62 @@ class ReportService {
                     totalRevenue: 1,
                     totalWeight: 1,
                     count: 1,
-                    averagePrice: 1
+                    averagePrice: 1,
+                    lowestPrice: 1,
+                    highestPrice: 1
                 }
             },
             { $sort: { totalRevenue: -1 } }
         ]);
 
-        return fishRevenue;
+        // ✅ Previous period of equal length, immediately before fromDate,
+        // used only to compute the price trend (Rising/Falling %).
+        const rangeLengthMs = toDate.getTime() - fromDate.getTime();
+        const prevToDate = new Date(fromDate.getTime() - 1); // 1ms before current range starts
+        const prevFromDate = new Date(prevToDate.getTime() - rangeLengthMs);
+
+        const prevMatchQuery = {
+            status: 'CONFIRMED',
+            billDate: { $gte: prevFromDate, $lte: prevToDate },
+            isDeleted: false
+        };
+        await this.applyRoleFilter(prevMatchQuery, user);
+
+        const prevFishPrices = await Bill.aggregate([
+            { $match: prevMatchQuery },
+            { $unwind: '$fishEntries' },
+            {
+                $group: {
+                    _id: '$fishEntries.fishId',
+                    averagePrice: { $avg: '$fishEntries.pricePerKg' }
+                }
+            }
+        ]);
+
+        // Map fishId -> previous average price, for quick lookup
+        const prevPriceMap = new Map(
+            prevFishPrices.map(p => [String(p._id), p.averagePrice])
+        );
+
+        // ✅ Attach trend info to each fish (null if no previous-period data to compare)
+        const fishRevenueWithTrend = fishRevenue.map(fish => {
+            const prevAvg = prevPriceMap.get(String(fish.fishId));
+            let priceChangePercent = null;
+            let isRising = null;
+
+            if (prevAvg && prevAvg > 0) {
+                priceChangePercent = ((fish.averagePrice - prevAvg) / prevAvg) * 100;
+                isRising = priceChangePercent >= 0;
+            }
+
+            return {
+                ...fish,
+                priceChangePercent,
+                isRising
+            };
+        });
+
+        return fishRevenueWithTrend;
     }
 
     /**
@@ -168,7 +224,7 @@ class ReportService {
         const { fromDate, toDate } = this.getDateRange(filters);
 
         const matchQuery = {
-            status: { $in: ['CONFIRMED', 'PAID'] },
+            status: 'CONFIRMED',
             billDate: { $gte: fromDate, $lte: toDate },
             isDeleted: false
         };
@@ -361,6 +417,9 @@ class ReportService {
         };
     }
 
+
+    // services/reportservice.js
+
     /**
      * Validate date range
      * @param {Object} filters - Filter parameters
@@ -369,6 +428,15 @@ class ReportService {
     validateDateRange(filters) {
         if (!filters.fromDate || !filters.toDate) {
             throw new Error('Both fromDate and toDate are required');
+        }
+
+        // ✅ Compare the date strings (YYYY-MM-DD) directly
+        const fromStr = filters.fromDate.split('T')[0]; // Get just YYYY-MM-DD
+        const toStr = filters.toDate.split('T')[0];   // Get just YYYY-MM-DD
+
+        // ✅ If same day, it's valid
+        if (fromStr === toStr) {
+            return; // ✅ Same day is always valid
         }
 
         const fromDate = new Date(filters.fromDate);
@@ -389,6 +457,46 @@ class ReportService {
     }
 
     /**
+    * Format a Date as YYYY-MM-DD in a fixed timezone (Asia/Kolkata),
+    * regardless of the server's local TZ setting.
+    */
+    formatDateKey(date, timeZone = 'Asia/Kolkata') {
+        return new Intl.DateTimeFormat('en-CA', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(date); // en-CA locale conveniently outputs YYYY-MM-DD
+    }
+
+    /**
+     * Fill in missing dates within a range with zero-value entries.
+     * Walks by fixed 24h increments (safe — India has no DST) and keys
+     * everything by IST calendar day so it matches the aggregation above.
+     */
+    fillMissingDates(dailyData, fromDate, toDate) {
+        const result = [];
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+        const dataMap = new Map(
+            dailyData.map(d => [this.formatDateKey(d.date), d])
+        );
+
+        let cursor = new Date(fromDate);
+
+        while (cursor <= toDate) {
+            const key = this.formatDateKey(cursor);
+            if (dataMap.has(key)) {
+                result.push(dataMap.get(key));
+            } else {
+                result.push({ date: new Date(cursor), revenue: 0, count: 0 });
+            }
+            cursor = new Date(cursor.getTime() + ONE_DAY_MS);
+        }
+
+        return result;
+    }
+    /**
      * Get date range from filters
      * @param {Object} filters - Filter parameters
      * @returns {Object} Date range
@@ -399,6 +507,16 @@ class ReportService {
 
         const toDate = new Date(filters.toDate);
         toDate.setHours(23, 59, 59, 999);
+
+        // ✅ If same day, set toDate to end of day
+        const isSameDay = fromDate.getFullYear() === toDate.getFullYear() &&
+            fromDate.getMonth() === toDate.getMonth() &&
+            fromDate.getDate() === toDate.getDate();
+
+        if (isSameDay) {
+            // Ensure toDate covers the entire day
+            toDate.setHours(23, 59, 59, 999);
+        }
 
         return { fromDate, toDate };
     }
@@ -484,7 +602,7 @@ class ReportService {
         const { fromDate, toDate } = this.getDateRange(filters);
 
         const matchQuery = {
-            status: { $in: ['CONFIRMED', 'PAID'] },
+            status: 'CONFIRMED',
             billDate: { $gte: fromDate, $lte: toDate },
             isDeleted: false
         };
@@ -586,10 +704,9 @@ class ReportService {
      */
     async getDashboardStats(user) {
         const query = {
-            status: { $in: ['CONFIRMED', 'PAID'] },
+            status: 'CONFIRMED',
             isDeleted: false
         };
-
         await this.applyRoleFilter(query, user);
 
         // Add additional filters for boat owner

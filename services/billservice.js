@@ -12,53 +12,152 @@ const logger = require('../config/logger');
 
 class BillService {
     /**
-     * Create a new bill
-     * @param {Object} billData - Bill data
-     * @param {string} userId - User ID creating the bill
-     * @returns {Promise<Object>} Created bill
+     * Generate bill number with proper date handling
      */
-    async createBill(billData, userId) {
+    async generateBillNumber() {
+        const date = new Date();
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const datePrefix = `${year}${month}${day}`;
+
+        // ✅ Find the highest sequence number for today
+        const latestBill = await Bill.findOne({
+            billNumber: { $regex: `^INV${datePrefix}` }
+        }).sort({ billNumber: -1 }).lean();
+
+        let sequence = 1;
+        if (latestBill) {
+            // Extract sequence from the latest bill number
+            const match = latestBill.billNumber.match(/^INV\d{8}(\d{4})$/);
+            if (match) {
+                sequence = parseInt(match[1]) + 1;
+            } else {
+                // Fallback: count all bills with today's prefix
+                const count = await Bill.countDocuments({
+                    billNumber: { $regex: `^INV${datePrefix}` },
+                    isDeleted: false
+                });
+                sequence = count + 1;
+            }
+        }
+
+        // ✅ Ensure uniqueness by checking if the generated number exists
+        let billNumber = `INV${datePrefix}${String(sequence).padStart(4, '0')}`;
+        let exists = await Bill.findOne({ billNumber, isDeleted: false });
+
+        // ✅ If exists, increment until we find a unique one
+        while (exists) {
+            sequence++;
+            billNumber = `INV${datePrefix}${String(sequence).padStart(4, '0')}`;
+            exists = await Bill.findOne({ billNumber, isDeleted: false });
+        }
+
+        console.log(`✅ Generated unique bill number: ${billNumber}`);
+        return billNumber;
+    }
+
+    /**
+     * Create bill with proper date handling
+     */
+    async createBill(data, userId) {
+        const {
+            boatId,
+            agentId,
+            staffId,
+            buyerId,
+            locationId,
+            subLocationId,
+            fishEntries,
+            notes,
+            billDate
+        } = data;
+
+        // Validate boat
+        const boat = await Boat.findOne({ _id: boatId, isDeleted: false });
+        if (!boat) {
+            throw new NotFoundError('Boat not found');
+        }
+
         // Generate bill number
-        const billNumber = await authService.generateBillNumber(billData.billDate);
+        const billNumber = await this.generateBillNumber();
 
-        // Auto-set agentId/staffId from user if not provided
-        const user = await User.findById(userId);
-        const agentId = billData.agentId || (user?.agentId || userId);
-
-        // Calculate totals - handle empty fishEntries
+        // Calculate totals
         let subtotal = 0;
-        const fishEntries = (billData.fishEntries || []).map(entry => {
-            const totalAmount = entry.weightKg * entry.pricePerKg;
-            subtotal += totalAmount;
-            return {
-                ...entry,
-                totalAmount
-            };
-        });
+        const processedEntries = [];
 
-        const commissionAmount = (subtotal * (billData.commissionRate || 0)) / 100;
+        if (fishEntries && Array.isArray(fishEntries)) {
+            for (const entry of fishEntries) {
+                const totalAmount = (entry.weightKg || 0) * (entry.pricePerKg || 0);
+                subtotal += totalAmount;
+                processedEntries.push({
+                    ...entry,
+                    totalAmount
+                });
+            }
+        }
+
+        // Calculate commission
+        const commissionRate = 0.05; // 5% default
+        const commissionAmount = subtotal * commissionRate;
         const grandTotal = subtotal + commissionAmount;
 
+        // Handle billDate - ensure it's a Date object
+        let billDateObj = new Date();
+        if (billDate) {
+            billDateObj = new Date(billDate);
+            if (isNaN(billDateObj.getTime())) {
+                throw new AppError('Invalid bill date format. Please use ISO format (YYYY-MM-DD)', 400);
+            }
+        }
+
+        // Create bill
         const bill = new Bill({
-            ...billData,
             billNumber,
-            agentId,
-            fishEntries,
+            boatId,
+            agentId: agentId || userId,
+            staffId: staffId || userId,
+            buyerId,
+            locationId,
+            subLocationId,
+            fishEntries: processedEntries,
             subtotal,
+            commissionRate,
             commissionAmount,
             grandTotal,
-            staffId: userId // Track who created the bill
+            status: 'CONFIRMED',
+            notes,
+            billDate: billDateObj
         });
 
         await bill.save();
 
-        // If bill is confirmed, create ledger entries
-        if (bill.status === 'CONFIRMED') {
-            await this.createLedgerEntries(bill);
-        }
+        // Create ledger entry
+        const ledger = new Ledger({
+            boatId,
+            agentId: agentId || userId,
+            ownerId: boat.ownerId,
+            billId: bill._id,
+            type: 'DEBIT',
+            amount: grandTotal,
+            balance: 0,
+            description: `Bill ${billNumber} created`,
+            date: billDateObj
+        });
 
-        logger.info(`Bill created: ${bill.billNumber} by user ${userId}`);
-        return bill;
+        await ledger.save();
+
+        // Populate references
+        const populatedBill = await Bill.findById(bill._id)
+            .populate('boatId', 'boatNumber boatName')
+            .populate('agentId', 'name email')
+            .populate('staffId', 'name email')
+            .populate('buyerId', 'name email')
+            .populate('locationId', 'name')
+            .populate('subLocationId', 'name');
+
+        logger.info(`Bill created: ${billNumber} for boat ${boat.boatNumber}`);
+        return populatedBill;
     }
 
     /**
@@ -70,8 +169,8 @@ class BillService {
     async getBillById(billId, user) {
         const bill = await Bill.findById(billId)
             .populate('boatId', 'boatNumber boatName')
-            .populate('agentId', 'name email')
-            .populate('staffId', 'name email')
+            .populate('agentId', 'name email')   // ✅ ADD THIS
+            .populate('staffId', 'name email')   // ✅ ADD THIS
             .populate('buyerId', 'name email')
             .populate('locationId', 'name')
             .populate('subLocationId', 'name')
@@ -81,9 +180,7 @@ class BillService {
             throw new Error('Bill not found');
         }
 
-        // Check access
         this.checkBillAccess(bill, user);
-
         return bill;
     }
 
@@ -109,18 +206,32 @@ class BillService {
         if (filters.buyerId) query.buyerId = filters.buyerId;
         if (filters.locationId) query.locationId = filters.locationId;
         if (filters.status) query.status = filters.status;
-        if (filters.fromDate) {
-            query.billDate = { $gte: new Date(filters.fromDate) };
+
+        // ✅ Handle date filtering - Single Date OR Date Range
+        if (filters.date) {
+            // Single date filter
+            const singleDate = new Date(filters.date);
+            singleDate.setHours(0, 0, 0, 0);
+            const endOfDay = new Date(singleDate);
+            endOfDay.setHours(23, 59, 59, 999);
+            query.billDate = { $gte: singleDate, $lte: endOfDay };
+        } else {
+            // Date range filter
+            if (filters.fromDate) {
+                query.billDate = { $gte: new Date(filters.fromDate) };
+            }
+            if (filters.toDate) {
+                const toDate = new Date(filters.toDate);
+                toDate.setHours(23, 59, 59, 999);
+                query.billDate = { ...query.billDate, $lte: toDate };
+            }
         }
-        if (filters.toDate) {
-            query.billDate = { ...query.billDate, $lte: new Date(filters.toDate) };
-        }
+
         if (filters.search) {
             const searchQuery = [
                 { billNumber: { $regex: filters.search, $options: 'i' } },
                 { 'boatId.boatNumber': { $regex: filters.search, $options: 'i' } }
             ];
-            // If role-based $or filter already exists, combine both via $and
             if (query.$or) {
                 const roleFilter = { $or: query.$or };
                 delete query.$or;
@@ -136,6 +247,8 @@ class BillService {
         const [bills, total] = await Promise.all([
             Bill.find(query)
                 .populate('boatId', 'boatNumber boatName')
+                .populate('agentId', 'name email')
+                .populate('staffId', 'name email')
                 .populate('buyerId', 'name')
                 .sort({ [filters.sortBy || 'billDate']: filters.sortOrder === 'asc' ? 1 : -1 })
                 .skip(skip)
@@ -229,17 +342,21 @@ class BillService {
             throw new Error('Bill not found');
         }
 
-        // Only allow deletion of draft bills
-        if (bill.status !== 'DRAFT') {
-            throw new Error('Cannot delete confirmed or paid bills');
+        // ✅ Allow deletion of CONFIRMED bills (not just DRAFT)
+        if (bill.status === 'CANCELLED') {
+            throw new Error('Cannot delete cancelled bill');
         }
 
         bill.isDeleted = true;
         await bill.save();
 
+        // ✅ Reverse ledger entries if bill was confirmed
+        if (bill.status === 'CONFIRMED') {
+            await this.reverseLedgerEntries(bill);
+        }
+
         logger.info(`Bill deleted: ${bill.billNumber} by user ${user._id}`);
     }
-
     /**
      * Get bill summary by boat
      * @param {string} boatId - Boat ID
