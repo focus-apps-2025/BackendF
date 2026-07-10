@@ -180,7 +180,7 @@ class BillService {
             throw new Error('Bill not found');
         }
 
-        this.checkBillAccess(bill, user);
+        await this.checkBillAccess(bill, user);
         return bill;
     }
 
@@ -277,7 +277,7 @@ class BillService {
         }
 
         // Check access
-        this.checkBillAccess(bill, user);
+        await this.checkBillAccess(bill, user);
 
         // Prevent modifications to cancelled bills
         if (bill.status === 'CANCELLED') {
@@ -401,14 +401,22 @@ class BillService {
      * @param {Object} user - Current user
      * @throws {Error} If access denied
      */
-    checkBillAccess(bill, user) {
+    async checkBillAccess(bill, user) {
         if (user.role === 'SUPER_ADMIN') return true;
 
-        const hasAccess = (
+        let hasAccess = (
             bill.agentId.toString() === user._id.toString() ||
             bill.staffId?.toString() === user._id.toString() ||
-            bill.buyerId.toString() === user._id.toString()
+            bill.buyerId?.toString() === user._id.toString()
         );
+
+        if (!hasAccess && user.role === 'BOAT_OWNER') {
+            const Boat = require('../models/boatmodel');
+            const boat = await Boat.findById(bill.boatId).lean();
+            if (boat && boat.ownerId.toString() === user._id.toString()) {
+                hasAccess = true;
+            }
+        }
 
         if (!hasAccess) {
             throw new Error('Access denied');
@@ -442,7 +450,10 @@ class BillService {
                 query.buyerId = user._id;
                 break;
             case 'BOAT_OWNER':
-                // Will be filtered by boat owner
+                const Boat = require('../models/boatmodel');
+                const ownerBoats = await Boat.find({ ownerId: user._id, isDeleted: false }).select('_id').lean();
+                const boatIds = ownerBoats.map(b => b._id);
+                query.boatId = { $in: boatIds };
                 break;
             default:
                 query._id = null; // No access

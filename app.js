@@ -9,10 +9,12 @@ const { errorHandler, notFoundHandler } = require('./middleware/errormiddleware'
 const { generalLimiter } = require('./middleware/rateLimiter');
 const { auditLog } = require('./middleware/auditLogmiddleware');
 const bookingRoutes = require('./routes/bookingroutes');
+const boatOwnerRoutes = require('./routes/boatownerroutes');
 
 
 // Import routes
 const authRoutes = require('./routes/authroutes');
+const fishBuyerBillRoutes = require('./routes/fishBuyerBillRoutes');
 const userRoutes = require('./routes/userroutes');
 const locationRoutes = require('./routes/locationroutes');
 const boatRoutes = require('./routes/boatroutes');
@@ -65,6 +67,8 @@ app.use('/api/tracking', trackingRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/seed', seedRoutes);
 app.use('/api/bookings', bookingRoutes);
+app.use('/api/boat-owner', boatOwnerRoutes);
+app.use('/api/fish-buyer-bills', fishBuyerBillRoutes);
 
 // Audit logging for all API routes
 app.use('/api', auditLog);

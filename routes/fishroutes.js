@@ -21,13 +21,13 @@ router.get('/',
 );
 
 router.post('/',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'FISH_BUYER'),
     auditLog,
     fishController.createFish
 );
 
 router.get('/agent/:agentId',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'STAFF'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'STAFF', 'FISH_BUYER'),
     fishController.getFishByAgent
 );
 
@@ -37,7 +37,7 @@ router.get('/:id',
 );
 
 router.put('/:id',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'FISH_BUYER'),
     validate(fishIdSchema, 'params'),
     validate(updateFishSchema),
     auditLog,
@@ -45,7 +45,7 @@ router.put('/:id',
 );
 
 router.delete('/:id',
-    authorize('COMMISSION_AGENT', 'SUPER_ADMIN'),
+    authorize('COMMISSION_AGENT', 'SUPER_ADMIN', 'FISH_BUYER'),
     validate(fishIdSchema, 'params'),
     auditLog,
     fishController.deleteFish

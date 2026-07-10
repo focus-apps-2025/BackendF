@@ -187,6 +187,15 @@ const deleteMyStaff = async (req, res, next) => {
         errorResponse(res, 400, error.message || 'Failed to delete staff');
     }
 };
+const getCommissionAgents = async (req, res, next) => {
+    try {
+        const agents = await userService.getCommissionAgents();
+        successResponse(res, 200, 'Commission agents retrieved successfully', agents);
+    } catch (error) {
+        logger.error('Get commission agents error:', error);
+        errorResponse(res, 500, error.message || 'Failed to get commission agents');
+    }
+};
 
 module.exports = {
     createUser,
@@ -199,5 +208,6 @@ module.exports = {
     getMyStaff,
     createMyStaff,
     updateMyStaff,
-    deleteMyStaff
+    deleteMyStaff,
+    getCommissionAgents
 };

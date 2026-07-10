@@ -42,9 +42,9 @@ const userBaseSchema = {
     agentId: Joi.string()
         .pattern(/^[0-9a-fA-F]{24}$/)
         .when('role', {
-            is: Joi.string().valid('STAFF', 'FISH_BUYER'),
+            is: Joi.string().valid('STAFF'),
             then: Joi.required().messages({
-                'any.required': 'Agent ID is required for staff and buyers'
+                'any.required': 'Agent ID is required for staff'
             })
         }),
     isActive: Joi.boolean()

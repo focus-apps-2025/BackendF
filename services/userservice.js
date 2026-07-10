@@ -11,10 +11,15 @@ class UserService {
      * @param {Object} userData - User data
      * @returns {Promise<Object>} Created user
      */
+    /**
+ * Create a new user
+ * @param {Object} userData - User data
+ * @returns {Promise<Object>} Created user
+ */
     async createUser(userData) {
-        // Check if email already exists
+        // Check if email already exists - with case-insensitive search
         const existingUser = await User.findOne({
-            email: userData.email.toLowerCase(),
+            email: { $regex: new RegExp(`^${userData.email.toLowerCase()}$`, 'i') },
             isDeleted: false
         });
 
@@ -23,42 +28,50 @@ class UserService {
         }
 
         // Validate password strength
-        const passwordValidation = validatePasswordStrength(userData.password);
-        if (!passwordValidation.valid) {
-            throw new Error(passwordValidation.errors.join('. '));
+        if (userData.password) {
+            const passwordValidation = validatePasswordStrength(userData.password);
+            if (!passwordValidation.valid) {
+                throw new Error(passwordValidation.errors.join('. '));
+            }
         }
 
         // Validate agent ID for STAFF and FISH_BUYER
-        if (['STAFF', 'FISH_BUYER'].includes(userData.role) && !userData.agentId) {
-            throw new Error('Agent ID is required for staff and buyers');
-        }
-
-        // Validate agent exists and is a COMMISSION_AGENT
-        if (userData.agentId) {
+        if (userData.role === 'STAFF') {
+            if (!userData.agentId) {
+                throw new Error('STAFF must be assigned to a commission agent');
+            }
+            // Validate agent exists and is a COMMISSION_AGENT
             const agent = await User.findOne({
                 _id: userData.agentId,
                 role: 'COMMISSION_AGENT',
                 isActive: true,
                 isDeleted: false
             });
-
             if (!agent) {
-                throw new Error('Invalid agent. Agent must be a COMMISSION_AGENT');
+                throw new Error('Invalid or inactive commission agent');
             }
         }
 
-        const user = new User({
-            ...userData,
-            email: userData.email.toLowerCase(),
-            name: userData.name.trim()
-        });
+        // Create user with try-catch for duplicate key error
+        try {
+            const user = new User({
+                ...userData,
+                email: userData.email.toLowerCase().trim(),
+                name: userData.name.trim()
+            });
 
-        await user.save();
-
-        logger.info(`User created: ${user.email} (${user.role})`);
-        return user.toJSON();
+            await user.save();
+            logger.info(`User created: ${user.email} (${user.role})`);
+            return user.toJSON();
+        } catch (error) {
+            // Catch MongoDB duplicate key error
+            if (error.code === 11000) {
+                logger.warn(`Duplicate email attempt: ${userData.email}`);
+                throw new Error('Email already registered');
+            }
+            throw error;
+        }
     }
-
     /**
      * Get users with pagination and filters
      * @param {Object} filters - Filter parameters
@@ -142,6 +155,12 @@ class UserService {
      * @param {Object} updateData - Update data
      * @returns {Promise<Object>} Updated user
      */
+    /**
+  * Update user
+  * @param {string} userId - User ID
+  * @param {Object} updateData - Update data
+  * @returns {Promise<Object>} Updated user
+  */
     async updateUser(userId, updateData) {
         const user = await User.findById(userId);
         if (!user) {
@@ -151,7 +170,7 @@ class UserService {
         // Check email uniqueness if updating
         if (updateData.email) {
             const existingUser = await User.findOne({
-                email: updateData.email.toLowerCase(),
+                email: { $regex: new RegExp(`^${updateData.email.toLowerCase()}$`, 'i') },
                 _id: { $ne: userId },
                 isDeleted: false
             });
@@ -192,7 +211,7 @@ class UserService {
 
         Object.keys(updateFields).forEach(key => {
             if (key === 'email') {
-                user[key] = updateFields[key].toLowerCase();
+                user[key] = updateFields[key].toLowerCase().trim();
             } else if (key === 'name') {
                 user[key] = updateFields[key].trim();
             } else {
@@ -200,17 +219,24 @@ class UserService {
             }
         });
 
-        await user.save();
-
-        logger.info(`User updated: ${user.email} by system`);
-        return user.toJSON();
+        try {
+            await user.save();
+            logger.info(`User updated: ${user.email} by system`);
+            return user.toJSON();
+        } catch (error) {
+            // Catch MongoDB duplicate key error
+            if (error.code === 11000) {
+                logger.warn(`Duplicate email attempt during update: ${updateData.email}`);
+                throw new Error('Email already registered');
+            }
+            throw error;
+        }
     }
 
-    /**
-     * Delete user (soft delete)
-     * @param {string} userId - User ID
-     * @returns {Promise<void>}
-     */
+    /*  Delete user (soft delete)
+  * @param {string} userId - User ID
+  * @returns {Promise<void>}
+    */
     async deleteUser(userId) {
         const user = await User.findById(userId);
         if (!user) {
@@ -235,22 +261,23 @@ class UserService {
             }
         }
 
-        // Check if user has any bills (if AGENT or STAFF)
-        if (['COMMISSION_AGENT', 'STAFF'].includes(user.role)) {
-            const Bill = require('../models/billmodel');
-            const billCount = await Bill.countDocuments({
-                $or: [
-                    { agentId: userId },
-                    { staffId: userId }
-                ],
-                isDeleted: false
-            });
+        // ❌ REMOVE THIS ENTIRE BILL CHECK BLOCK
+        // if (['COMMISSION_AGENT', 'STAFF'].includes(user.role)) {
+        //     const Bill = require('../models/billmodel');
+        //     const billCount = await Bill.countDocuments({
+        //         $or: [
+        //             { agentId: userId },
+        //             { staffId: userId }
+        //         ],
+        //         isDeleted: false
+        //     });
 
-            if (billCount > 0) {
-                throw new Error('Cannot delete user with existing bills');
-            }
-        }
+        //     if (billCount > 0) {
+        //         throw new Error('Cannot delete user with existing bills');
+        //     }
+        // }
 
+        // Soft delete the user - bills will remain in the database
         user.isDeleted = true;
         user.isActive = false;
         await user.clearRefreshTokens();
@@ -258,7 +285,6 @@ class UserService {
 
         logger.info(`User deleted: ${user.email}`);
     }
-
     /**
      * Get users by agent
      * @param {string} agentId - Agent ID
@@ -418,6 +444,17 @@ class UserService {
         await User.findByIdAndUpdate(userId, {
             lastLogin: new Date()
         });
+    }
+
+    async getCommissionAgents() {
+        return await User.find({
+            role: 'COMMISSION_AGENT',
+            isActive: true,
+            isDeleted: false
+        })
+            .select('_id name email phone')  // Only return needed fields
+            .sort({ name: 1 })  // Sort alphabetically
+            .lean();
     }
 }
 

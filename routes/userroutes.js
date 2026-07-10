@@ -17,6 +17,12 @@ const {
 // All user routes require authentication
 router.use(authenticate);
 
+// ✅ FIX: Add FISH_BUYER to the allowed roles
+router.get('/commission-agents',
+    authorize('SUPER_ADMIN', 'COMMISSION_AGENT', 'FISH_BUYER', 'STAFF'),  // ✅ Added FISH_BUYER
+    userController.getCommissionAgents
+);
+
 // Super admin only routes
 router.get('/',
     authorize('SUPER_ADMIN'),

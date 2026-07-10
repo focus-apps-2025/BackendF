@@ -24,7 +24,19 @@ const fishSchema = new mongoose.Schema({
     agentId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
+        // ✅ CHANGE: Make it optional (not required)
+        required: false
+    },
+    // ✅ NEW: Track who created the fish
+    createdBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
         required: true
+    },
+    // ✅ NEW: For global fish visibility
+    isGlobal: {
+        type: Boolean,
+        default: false
     },
     isActive: {
         type: Boolean,
@@ -39,10 +51,16 @@ const fishSchema = new mongoose.Schema({
 });
 
 // Indexes
-fishSchema.index({ name: 1, agentId: 1 }, { unique: true });
+// ✅ Update unique index to handle null agentId
+fishSchema.index({ name: 1, agentId: 1 }, {
+    unique: true,
+    sparse: true  // ✅ Allows null values
+});
 fishSchema.index({ agentId: 1 });
 fishSchema.index({ category: 1 });
 fishSchema.index({ isActive: 1 });
+fishSchema.index({ createdBy: 1 });  // ✅ NEW INDEX
+fishSchema.index({ isGlobal: 1 });   // ✅ NEW INDEX
 
 const Fish = mongoose.model('Fish', fishSchema);
 module.exports = Fish;
