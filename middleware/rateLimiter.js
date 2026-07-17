@@ -17,13 +17,13 @@ const generalLimiter = rateLimit({
     }
 });
 
-// Auth rate limiter (stricter)
+// Auth rate limiter (stricter) - Changed from 15 minutes to 2 minutes
 const authLimiter = rateLimit({
-    windowMs: env.authRateLimit.windowMs,
-    max: env.authRateLimit.max,
+    windowMs: 2 * 60 * 1000, // 2 minutes in milliseconds
+    max: 5,
     message: {
         success: false,
-        message: 'Too many login attempts, please try again after 15 minutes.'
+        message: 'Too many login attempts, please try again after 2 minutes.' // Updated message
     },
     standardHeaders: true,
     legacyHeaders: false,

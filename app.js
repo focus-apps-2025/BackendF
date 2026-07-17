@@ -24,6 +24,7 @@ const ledgerRoutes = require('./routes/ledgerroutes');
 const trackingRoutes = require('./routes/trackingroutes');
 const reportRoutes = require('./routes/reportroutes');
 const seedRoutes = require('./routes/seedroutes');
+const invoiceTemplateRoutes = require('./routes/invoiceTemplateRoutes');
 
 
 // Helper to wrap async handlers for Express 5
@@ -69,6 +70,7 @@ app.use('/api/seed', seedRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/boat-owner', boatOwnerRoutes);
 app.use('/api/fish-buyer-bills', fishBuyerBillRoutes);
+app.use('/api', invoiceTemplateRoutes);
 
 // Audit logging for all API routes
 app.use('/api', auditLog);

@@ -50,7 +50,19 @@ const authenticate = async (req, res, next) => {
         return errorResponse(res, 500, 'Authentication failed');
     }
 };
+const authorize = (roles = []) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return errorResponse(res, 401, 'Authentication required');
+        }
 
+        if (!roles.includes(req.user.role)) {
+            return errorResponse(res, 403, 'Insufficient permissions');
+        }
+
+        next();
+    };
+};
 // Optional authentication (doesn't block if no token)
 const optionalAuth = async (req, res, next) => {
     try {
@@ -73,7 +85,7 @@ const optionalAuth = async (req, res, next) => {
                 logger.debug('Optional auth token invalid:', error.message);
             }
         }
-        
+
         // In Express 5, async handlers don't use next - they return promises
         // Fall through to next middleware
         if (typeof next === 'function') {
@@ -88,5 +100,6 @@ const optionalAuth = async (req, res, next) => {
 
 module.exports = {
     authenticate,
-    optionalAuth
+    optionalAuth,
+    authorize
 };

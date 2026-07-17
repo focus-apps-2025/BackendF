@@ -9,6 +9,10 @@ const authService = require('./authservice');
 const ledgerService = require('./ledgerservice');
 const { getPaginationParams, buildPaginationMeta } = require('../utils/paginationutils');
 const logger = require('../config/logger');
+const invoiceTemplateService = require('./invoiceTemplateService');
+
+
+
 
 class BillService {
     /**
@@ -494,6 +498,27 @@ class BillService {
         await Ledger.deleteMany({ billId: bill._id });
         logger.info(`Ledger entries reversed for bill: ${bill.billNumber}`);
     }
+
+    /**
+     * Get bill with invoice template
+     * @param {string} billId - Bill ID
+     * @param {Object} user - Current user
+     * @returns {Promise<Object>} Bill with template data
+     */
+    async getBillWithTemplate(billId, user) {
+        const bill = await this.getBillById(billId, user);
+
+        // Get active invoice template
+        const template = await invoiceTemplateService.getActiveTemplate();
+
+        // Create a combined response
+        return {
+            bill: bill,
+            invoiceTemplate: template
+        };
+    }
+
 }
+
 
 module.exports = new BillService();
